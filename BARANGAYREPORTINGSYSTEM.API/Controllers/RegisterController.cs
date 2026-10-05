@@ -14,7 +14,7 @@ namespace BarangayReportingAPI.Controllers
 
         public RegisterController(IRegisterRepository registerRepository, IFileStorageService fileStorage)
         {
-            _registerRepository = registerRepository;
+            _registerRepository = registerRepository; 
             _fileStorage = fileStorage;
         }
 

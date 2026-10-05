@@ -20,6 +20,17 @@ namespace BARANGAYREPORTINGSYSTEM.API
             builder.Services.AddScoped<IFileStorageService, FileStorageService>();
             builder.Services.AddScoped<IComplaintRepository, ComplaintClass>();
 
+            // CORS (needed if Flutter runs in Chrome / web)
+            builder.Services.AddCors(options =>
+            {
+                options.AddPolicy("AllowAll", policy =>
+                {
+                    policy.AllowAnyOrigin()
+                          .AllowAnyHeader()
+                          .AllowAnyMethod();
+                });
+            });
+
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
 
@@ -56,7 +67,6 @@ namespace BARANGAYREPORTINGSYSTEM.API
             builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
                 {
-
                     options.MapInboundClaims = false;
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
@@ -81,8 +91,15 @@ namespace BARANGAYREPORTINGSYSTEM.API
                 app.UseSwaggerUI();
             }
 
-            app.UseHttpsRedirection();
+            // Only redirect to https outside Development, so plain http works from Flutter
+            if (!app.Environment.IsDevelopment())
+            {
+                app.UseHttpsRedirection();
+            }
+
             app.UseStaticFiles();
+
+            app.UseCors("AllowAll");
 
             app.UseAuthentication();
             app.UseAuthorization();

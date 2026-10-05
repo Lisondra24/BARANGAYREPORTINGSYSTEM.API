@@ -10,6 +10,8 @@ namespace BarangayReportingAPI.Class
 {
     public class AnnouncementClass : IAnnouncementRepository
     {
+        private const string SP = "SP_BARANGAYREPORTING_ANNOUNCEMENT";
+
         private readonly IConfiguration _configuration;
         private readonly SqlConnection conn;
         private readonly IFileStorageService _fileStorage;
@@ -39,25 +41,21 @@ namespace BarangayReportingAPI.Class
                     foreach (var photo in photos)
                     {
                         if (photo.Length == 0) continue;
-                        string path = await _fileStorage.SaveAnnouncementPhotoAsync(photo, adminId);
-                        savedPaths.Add(path);
+                        savedPaths.Add(await _fileStorage.SaveAnnouncementPhotoAsync(photo, adminId));
                     }
                 }
 
-                string? photoPathsCombined = savedPaths.Count > 0 ? string.Join("|", savedPaths) : null;
-
                 var param = new DynamicParameters();
+                param.Add("@Action", "CREATE");
                 param.Add("@AdminId", adminId);
                 param.Add("@Caption", string.IsNullOrWhiteSpace(caption) ? null : caption);
-                param.Add("@PhotoPaths", photoPathsCombined);
+                param.Add("@PhotoPaths", savedPaths.Count > 0 ? string.Join("|", savedPaths) : null);
                 param.Add("@NewAnnouncementId", dbType: DbType.Int32, direction: ParameterDirection.Output);
 
-                await conn.ExecuteAsync("SP_BARANGAYREPORTING_CREATEANNOUNCEMENT", param, commandType: CommandType.StoredProcedure);
-
-                int newId = param.Get<int>("@NewAnnouncementId");
+                await conn.ExecuteAsync(SP, param, commandType: CommandType.StoredProcedure);
 
                 service.Status = 200;
-                service.Data = new { AnnouncementId = newId, Caption = caption, Photos = savedPaths };
+                service.Data = new { AnnouncementId = param.Get<int>("@NewAnnouncementId"), Caption = caption, Photos = savedPaths };
                 service.Message = "Announcement posted.";
             }
             catch (Exception ex)
@@ -74,7 +72,7 @@ namespace BarangayReportingAPI.Class
             try
             {
                 var rows = await conn.QueryAsync<AnnouncementModel>(
-                    "SP_BARANGAYREPORTING_GETANNOUNCEMENTS", commandType: CommandType.StoredProcedure);
+                    SP, new { Action = "GET" }, commandType: CommandType.StoredProcedure);
 
                 var result = rows.Select(r => new AnnouncementResponseModel
                 {
@@ -107,11 +105,9 @@ namespace BarangayReportingAPI.Class
             var service = new ServiceResponse<object>();
             try
             {
-                var param = new DynamicParameters();
-                param.Add("@AnnouncementId", announcementId);
-                param.Add("@Caption", caption);
-
-                await conn.ExecuteAsync("SP_BARANGAYREPORTING_UPDATEANNOUNCEMENT", param, commandType: CommandType.StoredProcedure);
+                await conn.ExecuteAsync(SP,
+                    new { Action = "UPDATE", AnnouncementId = announcementId, Caption = caption },
+                    commandType: CommandType.StoredProcedure);
 
                 service.Status = 200;
                 service.Message = "Announcement updated.";
@@ -129,10 +125,9 @@ namespace BarangayReportingAPI.Class
             var service = new ServiceResponse<object>();
             try
             {
-                var param = new DynamicParameters();
-                param.Add("@AnnouncementId", announcementId);
-
-                await conn.ExecuteAsync("SP_BARANGAYREPORTING_DELETEANNOUNCEMENT", param, commandType: CommandType.StoredProcedure);
+                await conn.ExecuteAsync(SP,
+                    new { Action = "DELETE", AnnouncementId = announcementId },
+                    commandType: CommandType.StoredProcedure);
 
                 service.Status = 200;
                 service.Message = "Announcement deleted.";
