@@ -35,7 +35,10 @@ namespace BarangayReportingAPI.Controllers
             if (!int.TryParse(adminIdClaim, out int adminId))
                 return Unauthorized(new { Status = 401, Message = "Invalid or missing token." });
 
-            var result = await _announcementRepository.CreateAnnouncement(adminId, request.Caption, request.Photos);
+            // Read every uploaded file directly, whatever name the client used
+            var photos = Request.Form.Files.ToList();
+
+            var result = await _announcementRepository.CreateAnnouncement(adminId, request.Caption, photos);
             return StatusCode(result.Status, result);
         }
 
