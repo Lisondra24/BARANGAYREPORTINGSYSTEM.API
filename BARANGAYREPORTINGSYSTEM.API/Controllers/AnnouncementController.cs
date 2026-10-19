@@ -8,7 +8,7 @@ using System.IdentityModel.Tokens.Jwt;
 namespace BarangayReportingAPI.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/[controller]")]  
     public class AnnouncementController : ControllerBase
     {
         private readonly IAnnouncementRepository _announcementRepository;
