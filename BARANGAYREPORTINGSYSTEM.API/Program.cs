@@ -1,6 +1,8 @@
 using BarangayReportingAPI.Class;
 using BarangayReportingAPI.IRepository;
 using BarangayReportingAPI.Services;
+using BARANGAYREPORTINGSYSTEM.API.Models;
+using BARANGAYREPORTINGSYSTEM.API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -14,6 +16,9 @@ namespace BARANGAYREPORTINGSYSTEM.API
             var builder = WebApplication.CreateBuilder(args);
 
             // Add services to the container.
+            builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
+            builder.Services.AddScoped<IEmailService, EmailService>();
+            builder.Services.AddScoped<IChatbotFaqRepository, ChatbotFaqClass>();
             builder.Services.AddScoped<IAnnouncementRepository, AnnouncementClass>();
             builder.Services.AddScoped<IRegisterRepository, RegisterClass>();
             builder.Services.AddScoped<ILoginRepository, LoginClass>();

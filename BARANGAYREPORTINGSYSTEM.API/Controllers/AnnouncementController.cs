@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using BARANGAYREPORTINGSYSTEM.API.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using BarangayReportingAPI.IRepository;
 using BarangayReportingAPI.Model;

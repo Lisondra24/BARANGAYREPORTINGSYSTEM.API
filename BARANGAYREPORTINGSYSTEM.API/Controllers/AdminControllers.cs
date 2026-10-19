@@ -1,5 +1,6 @@
 ﻿using Dapper;
 using BarangayReportingAPI.Model;
+using BARANGAYREPORTINGSYSTEM.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.StaticFiles;
@@ -19,9 +20,24 @@ namespace BarangayReportingAPI.Controllers
     {
         private readonly IConfiguration _cfg;
         private readonly IWebHostEnvironment _env;
-        public AdminController(IConfiguration cfg, IWebHostEnvironment env) { _cfg = cfg; _env = env; }
+        private readonly IEmailService _email;
+
+        public AdminController(IConfiguration cfg, IWebHostEnvironment env, IEmailService email)
+        {
+            _cfg = cfg;
+            _env = env;
+            _email = email;
+        }
+
         private SqlConnection Db() => new SqlConnection(_cfg["ConnectionStrings:BarangayReportingDb"]);
         private IActionResult Done(object? data = null, string msg = "Success") => Ok(new { Status = 200, Message = msg, Data = data });
+
+        private class ComplaintOwner
+        {
+            public string FullName { get; set; } = "";
+            public string Email { get; set; } = "";
+            public string Status { get; set; } = "";
+        }
 
         // ---------- admin login ----------
         [AllowAnonymous]
@@ -100,6 +116,16 @@ namespace BarangayReportingAPI.Controllers
                 return BadRequest(new { Status = 400, Message = "Invalid status." });
 
             using var db = Db();
+
+            // get the owner and the current status BEFORE updating
+            var owner = await db.QueryFirstOrDefaultAsync<ComplaintOwner>(@"
+                SELECT u.FullName, u.Email, c.Status
+                FROM dbo.Complaints c JOIN dbo.Users u ON u.UserId = c.UserId
+                WHERE c.ComplaintId = @id", new { id });
+
+            if (owner == null)
+                return NotFound(new { Status = 404, Message = "Complaint not found." });
+
             await db.ExecuteAsync(@"
                 UPDATE dbo.Complaints
                 SET Status = @s, ResolvedAt = CASE WHEN @s = 'Resolved' THEN GETDATE() ELSE NULL END
@@ -107,6 +133,23 @@ namespace BarangayReportingAPI.Controllers
                 INSERT INTO dbo.Notifications (UserId, ComplaintId, Message)
                 SELECT UserId, ComplaintId, N'Your complaint was marked as ' + @s + N'.'
                 FROM dbo.Complaints WHERE ComplaintId = @id;", new { s = req.Status, id });
+
+            // email only when it changes to Resolved (no duplicate emails)
+            if (req.Status == "Resolved" && owner.Status != "Resolved" && !string.IsNullOrWhiteSpace(owner.Email))
+            {
+                var name = System.Net.WebUtility.HtmlEncode(owner.FullName);
+                var body = $@"
+                    <div style='font-family:Arial,sans-serif;font-size:15px;color:#1a2232'>
+                      <p>Hello {name},</p>
+                      <p>Your complaint (No. {id}) has been marked as <b>Resolved</b> by the Barangay.</p>
+                      <p>You can open the app to see the details. Thank you for reporting.</p>
+                      <p>- Barangay Manguikay</p>
+                    </div>";
+
+                // SendAsync never throws, so the complaint stays resolved even if the email fails
+                await _email.SendAsync(owner.Email, "Your complaint has been resolved", body);
+            }
+
             return Done(null, "Status updated.");
         }
 

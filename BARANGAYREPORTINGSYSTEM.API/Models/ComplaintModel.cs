@@ -28,4 +28,5 @@
         public string Status { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public List<string> Photos { get; set; } = new();
- 
+    }
+}
