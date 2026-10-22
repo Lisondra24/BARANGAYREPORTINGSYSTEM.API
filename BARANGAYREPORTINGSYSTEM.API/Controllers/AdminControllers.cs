@@ -39,6 +39,14 @@ namespace BarangayReportingAPI.Controllers
             public string Status { get; set; } = "";
         }
 
+        // NEW: used by Verify to read the user before approving / rejecting
+        private class PendingUser
+        {
+            public string FullName { get; set; } = "";
+            public string Email { get; set; } = "";
+            public string VerificationStatus { get; set; } = "";
+        }
+
         // ---------- admin login ----------
         [AllowAnonymous]
         [HttpPost("login")]
@@ -143,7 +151,7 @@ namespace BarangayReportingAPI.Controllers
                       <p>Hello {name},</p>
                       <p>Your complaint (No. {id}) has been marked as <b>Resolved</b> by the Barangay.</p>
                       <p>You can open the app to see the details. Thank you for reporting.</p>
-                      <p>- Barangay Manguikay</p>
+                      <p>- Barangay Maguikay</p>
                     </div>";
 
                 // SendAsync never throws, so the complaint stays resolved even if the email fails
@@ -177,12 +185,48 @@ namespace BarangayReportingAPI.Controllers
             return Done(rows);
         }
 
+        // UPDATED: sends an email to the resident when the account is approved or rejected
         [HttpPost("verify/{id}")]
         public async Task<IActionResult> Verify(int id, [FromBody] VerifyRequest req)
         {
             using var db = Db();
+
+            // get the user's details and current status BEFORE updating
+            var user = await db.QueryFirstOrDefaultAsync<PendingUser>(
+                "SELECT FullName, Email, VerificationStatus FROM dbo.Users WHERE UserId = @id", new { id });
+
+            if (user == null)
+                return NotFound(new { Status = 404, Message = "User not found." });
+
+            var newStatus = req.Approve ? "Approved" : "Rejected";
+
             await db.ExecuteAsync(@"UPDATE dbo.Users SET VerificationStatus = @s, IsActive = @a WHERE UserId = @id",
-                new { s = req.Approve ? "Approved" : "Rejected", a = req.Approve, id });
+                new { s = newStatus, a = req.Approve, id });
+
+            // email only when the status actually changes (no duplicate emails)
+            if (user.VerificationStatus != newStatus && !string.IsNullOrWhiteSpace(user.Email))
+            {
+                var name = System.Net.WebUtility.HtmlEncode(user.FullName);
+
+                var subject = req.Approve
+                    ? "Your account has been approved"
+                    : "Your account registration was not approved";
+
+                var message = req.Approve
+                    ? "<p>Your account has been <b>approved</b> by the Barangay. You can now log in to the app and file complaints.</p>"
+                    : "<p>Your account registration was <b>not approved</b>. Please visit the Barangay office with a valid ID so your details can be checked.</p>";
+
+                var body = $@"
+                    <div style='font-family:Arial,sans-serif;font-size:15px;color:#1a2232'>
+                      <p>Hello {name},</p>
+                      {message}
+                      <p>- Barangay Maguikay</p>
+                    </div>";
+
+                // SendAsync never throws, so the approval still saves even if the email fails
+                await _email.SendAsync(user.Email, subject, body);
+            }
+
             return Done(null, req.Approve ? "Account approved." : "Account rejected.");
         }
 

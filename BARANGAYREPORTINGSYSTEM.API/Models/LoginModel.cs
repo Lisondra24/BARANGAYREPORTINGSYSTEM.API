@@ -4,6 +4,8 @@
     {
         public string EmailOrUsername { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+        public string? DeviceId { get; set; }
+        public string? DeviceName { get; set; }
     }
 
     public class UserLoginModel
@@ -16,6 +18,13 @@
         public string Username { get; set; } = string.Empty;
         public string PasswordHash { get; set; } = string.Empty;
         public string VerificationStatus { get; set; } = string.Empty;
+        public bool IsActive { get; set; }
+    }
+
+    public class UserSessionRow
+    {
+        public string DeviceId { get; set; } = string.Empty;
+        public string DeviceName { get; set; } = string.Empty;
         public bool IsActive { get; set; }
     }
 }

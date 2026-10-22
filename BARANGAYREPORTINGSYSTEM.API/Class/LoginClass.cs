@@ -13,6 +13,9 @@ namespace BarangayReportingAPI.Class
 {
     public class LoginClass : ILoginRepository
     {
+        // No heartbeat for this many minutes = the old session counts as dead
+        private const int SessionTimeoutMinutes = 30;
+
         private readonly IConfiguration _configuration;
         private readonly SqlConnection conn;
 
@@ -22,7 +25,8 @@ namespace BarangayReportingAPI.Class
             conn = new SqlConnection(config["ConnectionStrings:BarangayReportingDb"]);
         }
 
-        public async Task<ServiceResponse<object>> GetLogin(string emailOrUsername, string password)
+        public async Task<ServiceResponse<object>> GetLogin(string emailOrUsername, string password,
+                                                            string? deviceId = null, string? deviceName = null)
         {
             ServiceResponse<object> service = new ServiceResponse<object>();
             try
@@ -71,11 +75,45 @@ namespace BarangayReportingAPI.Class
                     return service;
                 }
 
+                // ---- one device per account ----
+                string? sid = null;
+                if (!string.IsNullOrWhiteSpace(deviceId))
+                {
+                    var existing = await conn.QueryFirstOrDefaultAsync<UserSessionRow>(@"
+                        SELECT DeviceId, DeviceName,
+                               CASE WHEN DATEDIFF(MINUTE, LastActiveAt, GETDATE()) < @Mins THEN 1 ELSE 0 END AS IsActive
+                        FROM dbo.UserSessions WHERE UserId = @Id",
+                        new { Id = result.UserId, Mins = SessionTimeoutMinutes });
+
+                    if (existing != null && existing.IsActive && existing.DeviceId != deviceId)
+                    {
+                        service.Status = 409;
+                        service.Message = $"This account is already logged in on \"{existing.DeviceName}\". Log out there first.";
+                        return service;
+                    }
+
+                    sid = Guid.NewGuid().ToString("N");
+                    await conn.ExecuteAsync(@"
+                        MERGE dbo.UserSessions AS t
+                        USING (SELECT @UserId AS UserId) AS s ON t.UserId = s.UserId
+                        WHEN MATCHED THEN UPDATE SET DeviceId = @DeviceId, DeviceName = @DeviceName,
+                                                     SessionToken = @Sid, CreatedAt = GETDATE(), LastActiveAt = GETDATE()
+                        WHEN NOT MATCHED THEN INSERT (UserId, DeviceId, DeviceName, SessionToken)
+                                              VALUES (@UserId, @DeviceId, @DeviceName, @Sid);",
+                        new
+                        {
+                            UserId = result.UserId,
+                            DeviceId = deviceId,
+                            DeviceName = string.IsNullOrWhiteSpace(deviceName) ? "Unknown device" : deviceName,
+                            Sid = sid
+                        });
+                }
+
                 await conn.ExecuteAsync("UPDATE dbo.Users SET LastLoginAt = GETDATE() WHERE UserId = @Id", new { Id = result.UserId });
 
                 service.Status = 200;
                 service.Data = new { result.UserId, result.FullName, result.PurokId, result.PurokName, result.Email, result.Username, result.VerificationStatus };
-                service.Token = GenerateToken(result);
+                service.Token = GenerateToken(result, sid);
                 service.Message = "Login successful.";
             }
             catch (Exception ex)
@@ -86,14 +124,29 @@ namespace BarangayReportingAPI.Class
             return service;
         }
 
-        private string GenerateToken(UserLoginModel user)
+        public async Task<bool> Heartbeat(int userId, string sid)
+        {
+            var rows = await conn.ExecuteAsync(
+                "UPDATE dbo.UserSessions SET LastActiveAt = GETDATE() WHERE UserId = @userId AND SessionToken = @sid",
+                new { userId, sid });
+            return rows > 0;   // false = this session was replaced or logged out
+        }
+
+        public async Task Logout(int userId, string sid)
+        {
+            await conn.ExecuteAsync(
+                "DELETE FROM dbo.UserSessions WHERE UserId = @userId AND SessionToken = @sid",
+                new { userId, sid });
+        }
+
+        private string GenerateToken(UserLoginModel user, string? sid = null)
         {
             var jwtSettings = _configuration.GetSection("JwtSettings");
             var key = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(jwtSettings["SecretKey"])
             );
             var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-            var claims = new[]
+            var claims = new List<Claim>
             {
                 new Claim(JwtRegisteredClaimNames.Sub, user.UserId.ToString()),
                 new Claim(JwtRegisteredClaimNames.Email, user.Email),
@@ -104,6 +157,8 @@ namespace BarangayReportingAPI.Class
                 new Claim("verificationStatus", user.VerificationStatus),
                 new Claim("role", "User")
             };
+            if (sid != null) claims.Add(new Claim("sid", sid));
+
             var token = new JwtSecurityToken(
                 issuer: jwtSettings["Issuer"],
                 audience: jwtSettings["Audience"],

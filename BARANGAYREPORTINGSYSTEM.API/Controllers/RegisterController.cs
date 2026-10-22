@@ -2,6 +2,7 @@
 using BarangayReportingAPI.IRepository;
 using BarangayReportingAPI.Model;
 using BarangayReportingAPI.Services;
+using BARANGAYREPORTINGSYSTEM.API.Services;   // NEW: for IEmailService
 
 namespace BarangayReportingAPI.Controllers
 {
@@ -11,11 +12,15 @@ namespace BarangayReportingAPI.Controllers
     {
         private readonly IRegisterRepository _registerRepository;
         private readonly IFileStorageService _fileStorage;
+        private readonly IEmailService _email;   // NEW
 
-        public RegisterController(IRegisterRepository registerRepository, IFileStorageService fileStorage)
+        public RegisterController(IRegisterRepository registerRepository,
+                                  IFileStorageService fileStorage,
+                                  IEmailService email)   // NEW
         {
-            _registerRepository = registerRepository; 
+            _registerRepository = registerRepository;
             _fileStorage = fileStorage;
+            _email = email;   // NEW
         }
 
         [HttpGet("puroks")]
@@ -45,6 +50,21 @@ namespace BarangayReportingAPI.Controllers
             }
 
             var result = await _registerRepository.GetRegister(request, idFrontPath, idBackPath, liveSelfiePath);
+
+            // NEW: send the confirmation email only if registration succeeded
+            if (result.Status == 200)
+            {
+                var sent = await _email.SendAsync(
+                    request.Email,
+                    "Registration received - Barangay Manguikay",
+                    $"<p>Hi {System.Net.WebUtility.HtmlEncode(request.FullName)},</p>" +
+                    "<p>We received your registration. An administrator will verify your ID, " +
+                    "and you will be notified once your account is approved.</p>");
+
+                if (!sent)
+                    result.Message += " (Confirmation email could not be sent.)";
+            }
+
             return StatusCode(result.Status, result);
         }
     }
