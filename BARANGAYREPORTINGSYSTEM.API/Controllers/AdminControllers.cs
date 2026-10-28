@@ -145,14 +145,7 @@ namespace BarangayReportingAPI.Controllers
             // email only when it changes to Resolved (no duplicate emails)
             if (req.Status == "Resolved" && owner.Status != "Resolved" && !string.IsNullOrWhiteSpace(owner.Email))
             {
-                var name = System.Net.WebUtility.HtmlEncode(owner.FullName);
-                var body = $@"
-                    <div style='font-family:Arial,sans-serif;font-size:15px;color:#1a2232'>
-                      <p>Hello {name},</p>
-                      <p>Your complaint (No. {id}) has been marked as <b>Resolved</b> by the Barangay.</p>
-                      <p>You can open the app to see the details. Thank you for reporting.</p>
-                      <p>- Barangay Maguikay</p>
-                    </div>";
+                var body = EmailTemplates.ComplaintResolved(owner.FullName, id);
 
                 // SendAsync never throws, so the complaint stays resolved even if the email fails
                 await _email.SendAsync(owner.Email, "Your complaint has been resolved", body);
@@ -206,22 +199,13 @@ namespace BarangayReportingAPI.Controllers
             // email only when the status actually changes (no duplicate emails)
             if (user.VerificationStatus != newStatus && !string.IsNullOrWhiteSpace(user.Email))
             {
-                var name = System.Net.WebUtility.HtmlEncode(user.FullName);
-
                 var subject = req.Approve
                     ? "Your account has been approved"
                     : "Your account registration was not approved";
 
-                var message = req.Approve
-                    ? "<p>Your account has been <b>approved</b> by the Barangay. You can now log in to the app and file complaints.</p>"
-                    : "<p>Your account registration was <b>not approved</b>. Please visit the Barangay office with a valid ID so your details can be checked.</p>";
-
-                var body = $@"
-                    <div style='font-family:Arial,sans-serif;font-size:15px;color:#1a2232'>
-                      <p>Hello {name},</p>
-                      {message}
-                      <p>- Barangay Maguikay</p>
-                    </div>";
+                var body = req.Approve
+                    ? EmailTemplates.AccountApproved(user.FullName)
+                    : EmailTemplates.AccountRejected(user.FullName);
 
                 // SendAsync never throws, so the approval still saves even if the email fails
                 await _email.SendAsync(user.Email, subject, body);

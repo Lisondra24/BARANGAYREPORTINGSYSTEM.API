@@ -57,9 +57,7 @@ namespace BarangayReportingAPI.Controllers
                 var sent = await _email.SendAsync(
                     request.Email,
                     "Registration received - Barangay Manguikay",
-                    $"<p>Hi {System.Net.WebUtility.HtmlEncode(request.FullName)},</p>" +
-                    "<p>We received your registration. An administrator will verify your ID, " +
-                    "and you will be notified once your account is approved.</p>");
+                    EmailTemplates.RegistrationReceived(request.FullName));
 
                 if (!sent)
                     result.Message += " (Confirmation email could not be sent.)";
